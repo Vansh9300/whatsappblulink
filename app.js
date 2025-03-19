@@ -1,5 +1,35 @@
+const express = require('express');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+
+// Initialize Express app
+const app = express();
+const server = createServer(app);
+const io = new Server(server);
+
+// Function to cleanup session files
+const cleanupSession = async () => {
+    try {
+        const sessionPath = path.join(__dirname, '.wwebjs_auth');
+        if (require('fs').existsSync(sessionPath)) {
+            await require('fs/promises').rm(sessionPath, { recursive: true, force: true });
+            console.log('Old session files cleaned up');
+        }
+    } catch (error) {
+        console.error('Error cleaning up session:', error);
+    }
+};
+
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Start server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
 
 // Maps to track user states
 const greetedUsers = new Map();
@@ -12,13 +42,14 @@ const client = new Client({
 
 // Generate QR Code for WhatsApp Web authentication
 client.on('qr', (qr) => {
-    console.log('Scan the QR code below to log in to WhatsApp Web:');
-    qrcode.generate(qr, { small: true });
+    console.log('QR Code received');
+    io.emit('qr', qr);
 });
 
 // Handle client ready event
 client.on('ready', () => {
     console.log('Client is ready!');
+    io.emit('ready');
 });
 
 // Handle incoming messages
@@ -139,11 +170,33 @@ client.on('message', async (message) => {
                 await message.reply('Please select a valid option or press 0 to go back to main menu.');
             }
         }
-        console.log('Auto-reply sent successfully!');
+        const logMessage = 'Auto-reply sent successfully!';
+console.log(logMessage);
+io.emit('console', logMessage);
     } catch (error) {
-        console.error('Error sending auto-reply:', error);
+        const errorMessage = `Error sending auto-reply: ${error}`;
+console.error(errorMessage);
+io.emit('console', errorMessage);
     }
 });
 
-// Initialize the WhatsApp client
-client.initialize();
+// Cleanup and initialize
+cleanupSession().then(() => {
+    client.initialize().catch(err => {
+        console.error('Failed to initialize client:', err);
+        process.exit(1);
+    });
+});
+
+// Handle process termination
+process.on('SIGINT', async () => {
+    console.log('Received SIGINT. Cleaning up...');
+    try {
+        await client.destroy();
+        await cleanupSession();
+        process.exit(0);
+    } catch (error) {
+        console.error('Error during cleanup:', error);
+        process.exit(1);
+    }
+});
