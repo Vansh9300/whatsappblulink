@@ -213,13 +213,9 @@ client.on('message', async (message) => {
                 await message.reply('Please select a valid option or press 0 to go back to main menu.');
             }
         }
-        const logMessage = 'Auto-reply sent successfully!';
-console.log(logMessage);
-io.emit('console', logMessage);
+        console.log('Auto-reply sent successfully!');
     } catch (error) {
-        const errorMessage = `Error sending auto-reply: ${error}`;
-console.error(errorMessage);
-io.emit('console', errorMessage);
+        console.error(`Error sending auto-reply: ${error}`);
     }
 });
 
