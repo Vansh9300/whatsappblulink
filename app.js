@@ -1,14 +1,6 @@
-const express = require('express');
-const { createServer } = require('http');
-const { Server } = require('socket.io');
 const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-
-// Initialize Express app
-const app = express();
-const server = createServer(app);
-const io = new Server(server);
 
 // Function to cleanup session files with retry mechanism
 const cleanupSession = async (retries = 3, delay = 2000) => {
@@ -48,25 +40,7 @@ const cleanupSession = async (retries = 3, delay = 2000) => {
     console.error('Failed to cleanup session after all retries');
 };
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
 
-// Start server
-const port = process.env.PORT || 3000;
-if (process.env.NODE_ENV !== 'production') {
-    server.listen(port, '0.0.0.0', () => {
-        console.log(`Server is running on port ${port}`);
-    }).on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-            console.log(`Port ${port} is busy, trying ${port + 1}`);
-            server.listen(port + 1, '0.0.0.0');
-        } else {
-            console.error('Server error:', err);
-        }
-    });
-} else {
-    module.exports = app;
-}
 
 // Maps to track user states
 const greetedUsers = new Map();
@@ -96,19 +70,19 @@ client.on('qr', async (qr) => {
     // Generate smaller QR code in terminal
     qrcode.generate(qr, {small: true, scale: 0.05});
     
-    // Save QR code as image file
-    const qrImagePath = path.join(__dirname, 'qr-code.png');
+    // Save QR code to a default location
+    const fs = require('fs').promises;
+    const defaultPath = path.join(process.cwd(), 'qr-code.png');
+    
     try {
-        await require('qrcode').toFile(qrImagePath, qr, {
+        await require('qrcode').toFile(defaultPath, qr, {
             width: 200,
             margin: 1
         });
-        console.log('QR code saved as:', qrImagePath);
+        console.log('QR code saved as:', defaultPath);
     } catch (err) {
         console.error('Failed to save QR code:', err);
     }
-    
-    io.emit('qr', qr);
 });
 
 // Handle client ready event
@@ -245,18 +219,25 @@ io.emit('console', errorMessage);
     }
 });
 
-// Cleanup and initialize with retry mechanism
+// Cleanup and initialize with retry mechanism and timeout
 const initializeClient = async (retries = 3) => {
+    const initTimeout = setTimeout(() => {
+        console.error('Initialization timeout reached. Exiting...');
+        process.exit(1);
+    }, 120000); // 2 minute timeout
+
     for (let i = 0; i < retries; i++) {
         try {
             await cleanupSession();
             await client.initialize();
             console.log('Client initialized successfully!');
+            clearTimeout(initTimeout);
             return;
         } catch (err) {
             console.error(`Failed to initialize client (attempt ${i + 1}/${retries}):`, err);
             if (i === retries - 1) {
                 console.error('Max retries reached. Exiting...');
+                clearTimeout(initTimeout);
                 process.exit(1);
             }
             // Wait before retrying
@@ -265,7 +246,10 @@ const initializeClient = async (retries = 3) => {
     }
 };
 
-initializeClient();
+// Initialize client only after server is ready
+if (require.main === module) {
+    initializeClient();
+}
 
 // Handle process termination
 process.on('SIGINT', async () => {
