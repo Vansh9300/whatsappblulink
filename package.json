@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "express": "^4.18.2",
+    "puppeteer": "^19.7.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
     "socket.io": "^4.7.2",
-    "whatsapp-web.js": "^1.21.0",
-    "puppeteer": "^19.7.0"
+    "whatsapp-web.js": "^1.21.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
