@@ -2,6 +2,8 @@ const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
+
+
 // Function to cleanup session files with retry mechanism
 const cleanupSession = async (retries = 3, delay = 2000) => {
     for (let i = 0; i < retries; i++) {
@@ -70,6 +72,8 @@ client.on('qr', async (qr) => {
     // Generate smaller QR code in terminal
     qrcode.generate(qr, {small: true, scale: 0.05});
     
+
+    
     // Save QR code to a default location
     const fs = require('fs').promises;
     const defaultPath = path.join(process.cwd(), 'qr-code.png');
@@ -88,7 +92,7 @@ client.on('qr', async (qr) => {
 // Handle client ready event
 client.on('ready', () => {
     console.log('Client is ready!');
-    io.emit('ready');
+
 });
 
 // Handle incoming messages
