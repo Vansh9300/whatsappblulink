@@ -26,10 +26,21 @@ const cleanupSession = async () => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+const port = process.env.PORT || 3000;
+if (process.env.NODE_ENV !== 'production') {
+    server.listen(port, '0.0.0.0', () => {
+        console.log(`Server is running on port ${port}`);
+    }).on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.log(`Port ${port} is busy, trying ${port + 1}`);
+            server.listen(port + 1, '0.0.0.0');
+        } else {
+            console.error('Server error:', err);
+        }
+    });
+} else {
+    module.exports = app;
+}
 
 // Maps to track user states
 const greetedUsers = new Map();
