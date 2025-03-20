@@ -3,23 +3,49 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
 
 // Initialize Express app
 const app = express();
 const server = createServer(app);
 const io = new Server(server);
 
-// Function to cleanup session files
-const cleanupSession = async () => {
-    try {
-        const sessionPath = path.join(__dirname, '.wwebjs_auth');
-        if (require('fs').existsSync(sessionPath)) {
-            await require('fs/promises').rm(sessionPath, { recursive: true, force: true });
-            console.log('Old session files cleaned up');
+// Function to cleanup session files with retry mechanism
+const cleanupSession = async (retries = 3, delay = 2000) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const sessionPath = path.join(__dirname, '.wwebjs_auth');
+            if (require('fs').existsSync(sessionPath)) {
+                // Try to terminate any Chrome processes (Windows specific)
+                try {
+                    await new Promise((resolve, reject) => {
+                        require('child_process').exec('taskkill /F /IM chrome.exe', (error) => {
+                            if (error && error.code !== 128) {
+                                console.warn('Warning: Chrome process termination:', error);
+                            }
+                            resolve();
+                        });
+                    });
+                    // Wait for processes to fully terminate
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } catch (err) {
+                    console.warn('Warning: Error during Chrome cleanup:', err);
+                }
+
+                await require('fs/promises').rm(sessionPath, { recursive: true, force: true });
+                console.log('Old session files cleaned up successfully');
+                return;
+            }
+            return;
+        } catch (error) {
+            console.error(`Error cleaning up session (attempt ${i + 1}/${retries}):`, error);
+            if (i < retries - 1) {
+                console.log(`Retrying in ${delay/1000} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
         }
-    } catch (error) {
-        console.error('Error cleaning up session:', error);
     }
+    console.error('Failed to cleanup session after all retries');
 };
 
 // Serve static files
@@ -46,14 +72,42 @@ if (process.env.NODE_ENV !== 'production') {
 const greetedUsers = new Map();
 const userStates = new Map(); // Track which menu the user is in
 
-// Create a new WhatsApp client
+// Create a new WhatsApp client with extended timeout and proper configuration
 const client = new Client({
-    authStrategy: new LocalAuth()
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu'
+        ],
+        timeout: 60000 // Increase timeout to 60 seconds
+    }
 });
 
 // Generate QR Code for WhatsApp Web authentication
-client.on('qr', (qr) => {
+client.on('qr', async (qr) => {
     console.log('QR Code received');
+    // Generate smaller QR code in terminal
+    qrcode.generate(qr, {small: true, scale: 0.05});
+    
+    // Save QR code as image file
+    const qrImagePath = path.join(__dirname, 'qr-code.png');
+    try {
+        await require('qrcode').toFile(qrImagePath, qr, {
+            width: 200,
+            margin: 1
+        });
+        console.log('QR code saved as:', qrImagePath);
+    } catch (err) {
+        console.error('Failed to save QR code:', err);
+    }
+    
     io.emit('qr', qr);
 });
 
@@ -191,13 +245,27 @@ io.emit('console', errorMessage);
     }
 });
 
-// Cleanup and initialize
-cleanupSession().then(() => {
-    client.initialize().catch(err => {
-        console.error('Failed to initialize client:', err);
-        process.exit(1);
-    });
-});
+// Cleanup and initialize with retry mechanism
+const initializeClient = async (retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await cleanupSession();
+            await client.initialize();
+            console.log('Client initialized successfully!');
+            return;
+        } catch (err) {
+            console.error(`Failed to initialize client (attempt ${i + 1}/${retries}):`, err);
+            if (i === retries - 1) {
+                console.error('Max retries reached. Exiting...');
+                process.exit(1);
+            }
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+    }
+};
+
+initializeClient();
 
 // Handle process termination
 process.on('SIGINT', async () => {
