@@ -44,9 +44,10 @@ const cleanupSession = async (retries = 3, delay = 2000) => {
 
 
 
-// Maps to track user states
+// Maps to track user states and processed messages
 const greetedUsers = new Map();
 const userStates = new Map(); // Track which menu the user is in
+const processedMessages = new Map(); // Track processed message IDs
 
 // Create a new WhatsApp client with extended timeout and proper configuration
 const client = new Client({
@@ -97,6 +98,17 @@ client.on('ready', () => {
 
 // Handle incoming messages
 client.on('message', async (message) => {
+    // Check if message was already processed
+    if (processedMessages.has(message.id)) {
+        return;
+    }
+    processedMessages.set(message.id, true);
+
+    // Cleanup old messages from the Map every 1000 messages
+    if (processedMessages.size > 1000) {
+        processedMessages.clear();
+    }
+
     // Define greeting patterns
     const greetingPatterns = ['hi', 'hello', 'hey', 'hola', 'greetings','hii'];
     const messageText = message.body.toLowerCase();
